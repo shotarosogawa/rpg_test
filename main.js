@@ -1,8 +1,8 @@
 "use strict"
 
 const DEBUG_MODE = true;
-const START_X = 15;                                 // プレイヤー初期位置 x値
-const START_Y = 17;                                 // プレイヤー初期位置 ｙｙ値
+const START_X = 15;                                 // プレイヤー初期位置 タイル座標 x値
+const START_Y = 17;                                 // プレイヤー初期位置 タイル座標 y値
 const FONT = "12px monospace";                      // 使用フォント
 const FONT_STYLE = "white";
 const DEBUG_WINDOW_STYLE = "rgba(0, 0, 0, 0.75)";
@@ -63,53 +63,60 @@ let player;         // プレイヤー
 let character;      // キャラクター
 let gHeight;
 let gWidth;
-let middlePoint;    // 中点の初期座標
 
 class Map {
     constructor() {
         this.img = new Image();
         this.img.src = "img/map.png";           // マップチップファイル
         this.con = fieldCon;                    // 2D描画コンテキスト
-        this.size = new Vector2 (
-            FIELD_WIDTH / TILE_SIZE + 1
-            , FIELD_HEIGHT / TILE_SIZE + 1
-        );                                      // フィールドサイズ　描画サイズではなくマップを生成する時のサイズ
-        if ((FIELD_WIDTH / 8) % 2 === 0) {      // フィールド幅を16の倍数とした時、キャラがマップタイルの間に立ってしまうので補正値を設定
-            this.correction = TILE_SIZE / 2;
-        } else {
-            this.correction = 0;
-        }
+        this.middlePointPos = new Vector2(      // 画面の中心点の座標
+            FIELD_WIDTH / 2
+            , FIELD_HEIGHT / 2
+        );
+        this.drawRange = new Vector2(           // 描画範囲
+            Math.ceil(this.middlePointPos.x / TILE_SIZE)
+            , Math.ceil(this.middlePointPos.y / TILE_SIZE)
+        );
     }
     /**
+     * プレイヤーの座標を基準にマップの描画を行う
+     * 
      * @param {string}  type   マップの種類
-     * @param {Object} player プレイヤークラス
+     * @param {Vector2} playerPos プレイヤー座標
      */
-    draw(type, player) {
-        let index;                              // 使用するマップタイルのインデックス
-        let ix;                                 // どのマップタイルを使用するか　x値
-        let iy;                                 // どのマップタイルを使用するか　y値
-        let dx = Math.floor(player.relative.x); // プレイヤーの移動座標　x値
-        let dy = Math.floor(player.relative.y); // プレイヤーの移動座標　y値
+    draw(type, playerPos) {
+        let mx;                             // 描画するマップタイルのタイル座標 x値
+        let my;                             // 描画するマップタイルのタイル座標 y値
+        let dx;                             // 描画イメージ矩形のタイル座標 x値
+        let dy;                             // 描画イメージ矩形のタイル座標 y値
+        let index;                          // マップタイルのインデックス
+        let drawCorrection = new Vector2(   // 描画イメージ矩形の補正値
+            playerPos.x % TILE_SIZE - this.middlePointPos.x % TILE_SIZE     // プレーヤーのタイル座標 小数部 x値 - 画面中心点のタイル座標 小数部 x値
+            , playerPos.y % TILE_SIZE - this.middlePointPos.y % TILE_SIZE   // プレーヤーのタイル座標 小数部 y値 - 画面中心点のタイル座標 小数部 y値
+        );
         
-        for (let y = 0; y <= this.size.y; y++) {
-            for (let x = 0; x <= this.size.x; x++) {
-                index = getMapIndex(
+        for (let y = -this.drawRange.y; y <= this.drawRange.y; y++) {
+            my = y + Math.floor(playerPos.y / TILE_SIZE);                   // プレイヤー座標を基準に描画するので、プレーヤーのタイル座標の整数部を加算
+            dy = y + Math.floor(this.middlePointPos.y / TILE_SIZE);         // 基準とするプレイヤーはマップの中心点に描画するので、画面の中心点のタイル座標の整数部を加算
+            for (let x = -this.drawRange.x; x <= this.drawRange.x; x++) {
+                mx = x + Math.floor(playerPos.x / TILE_SIZE);               // プレイヤー座標を基準に描画するので、プレーヤーのタイル座標の整数部を加算
+                dx = x + Math.floor(this.middlePointPos.x / TILE_SIZE);     // 基準とするプレイヤーはマップの中心点に描画するので、画面の中心点のタイル座標の整数部を加算
+                index = getMapIndex(                                        // 描画するタイルのインデックスを取得
                     type
-                    , x + dx
-                    , y + dy
+                    , mx
+                    , my
                 );
-                ix = (index % TILE_COLUMN) * TILE_SIZE;
-                iy = Math.floor(index / TILE_ROW) * TILE_SIZE;
+
                 this.con.drawImage(
-                    this.img                            // マップチップ
-                    , ix                                // どのタイルを使用するか　x値
-                    , iy                                // どのタイルを使用するか　y値
-                    , TILE_SIZE
-                    , TILE_SIZE
-                    , (x + dx - player.relative.x) * TILE_SIZE - this.correction
-                    , (y + dy - player.relative.y) * TILE_SIZE
-                    , TILE_SIZE
-                    , TILE_SIZE
+                    this.img                                    // 描画するイメージ
+                    , (index % TILE_COLUMN) * TILE_SIZE         // 元イメージ使用範囲の矩形のx座標
+                    , Math.floor(index / TILE_ROW) * TILE_SIZE  // 元イメージ使用範囲の矩形のy座標
+                    , TILE_SIZE                                 // 元イメージ使用範囲の矩形の幅
+                    , TILE_SIZE                                 // 元イメージ使用範囲の矩形の高さ
+                    , dx * TILE_SIZE - drawCorrection.x         // 描画イメージ矩形のx座標
+                    , dy * TILE_SIZE - drawCorrection.y         // 描画イメージ矩形のy座標
+                    , TILE_SIZE                                 // イメージを描画する幅
+                    , TILE_SIZE                                 // イメージを描画する高さ
                 );
             }
         }
@@ -119,13 +126,12 @@ class Map {
 class Character {
     constructor() {
         this.img = new Image();
-        this.img.src = "img/player.png";                // キャラチップファイル
-        this.con = fieldCon;                            // 2D描画コンテキストを取得
-        this.position = new Vector2(16, 16);            // 座標
-        this.relative = this.position.sub(middlePoint); // 中心からの相対座標
-        this.angle = 0;                                 // 向き
-        this.act = 0;                                   // 動き
-        this.move = new Vector2(0, 0);                  // 移動量
+        this.img.src = "img/player.png";            // キャラチップファイル
+        this.con = fieldCon;                        // 2D描画コンテキストを取得
+        this.position = new Vector2(16, 16);        // 座標
+        this.angle = 0;                             // 向き
+        this.act = 0;                               // 動き
+        this.move = new Vector2(0, 0);              // 移動量
     }
     /**
      * @param {Vector2} player_pos プレイヤー座標
@@ -133,8 +139,8 @@ class Character {
     draw(player_pos) {
         this.con.drawImage(
             this.img
-            , this.act
-            , this.angle
+            , this.act * CHAR_COLUMN
+            , this.angle * CHAR_ROW
             , CHAR_COLUMN
             , CHAR_ROW
             , this.position.x - CHAR_COLUMN / 2 - player_pos.x * TILE_SIZE
@@ -146,51 +152,49 @@ class Character {
     update() {
         let index;
 
-        this.act = (frame >> 4 & 1) * CHAR_COLUMN;  // 通常動作の定義
+        this.act = (frame >> 4 & 1);  // 通常動作の定義
 
         if (this.move.mag() === 0) {                // 歩行動作の定義
             if (gKey["a"]) {                            // 左に動く
-                this.move.x = -1;
-                this.angle = 9;
+                this.move.x = -TILE_SIZE;
+                this.angle = 1;
             } else if (gKey["w"]) {                     // 上に動く
-                this.move.y = -1;
-                this.angle = 27;
+                this.move.y = -TILE_SIZE;
+                this.angle = 3;
             } else if (gKey["d"]) {                     // 右に動く
-                this.move.x = 1;
-                this.angle = 18;
+                this.move.x = TILE_SIZE;
+                this.angle = 2;
             } else if (gKey["s"]) {                     // 下に動く
-                this.move.y = 1;
+                this.move.y = TILE_SIZE;
                 this.angle = 0;
             }
         }
 
-        index = getMapIndex(
+        index = getMapIndex(                        // 移動後のタイルのインデックスを取得
             "main"
-            , this.move.x + this.position.x
-            , this.move.y + this.position.y
-        );                                                      // 移動後のタイルのインデックスを取得
-        if (index === 0 || index === 1 || index === 2) {        // 移動後のタイルが移動不可の場合
-            this.move.x = 0;                                        // 移動距離のx座標を0とする
-            this.move.y = 0;                                        // 移動距離のy座標を0とする
+            , this.position.add(this.move).x / TILE_SIZE
+            , this.position.add(this.move).y / TILE_SIZE
+        );
+        if (index === 0 || index === 1 || index === 2) {    // 移動後のタイルが移動不可の場合
+            this.move.x = 0;                                    // 移動距離のx座標を0とする
+            this.move.y = 0;                                    // 移動距離のy座標を0とする
         }
-        if (this.move.mag() != 0) {                             // 移動距離が0でない場合、座標の更新を行う
-            this.position.x += Math.sign(this.move.x) / TILE_SIZE;  // 座標の更新　x値
-            this.position.y += Math.sign(this.move.y) / TILE_SIZE;  // 座標の更新　y値
-            this.move.x -= Math.sign(this.move.x) / TILE_SIZE;      // 移動距離のx座標が0になるまで減算
-            this.move.y -= Math.sign(this.move.y) / TILE_SIZE;      // 移動距離のy座標が0になるまで減算
+        if (this.move.mag() != 0) {                         // 移動距離が0でない場合、座標の更新を行う
+            this.position.x += Math.sign(this.move.x);          // 座標の更新　x値
+            this.position.y += Math.sign(this.move.y);          // 座標の更新　y値
+            this.move.x -= Math.sign(this.move.x);              // 移動距離のx座標が0になるまで減算
+            this.move.y -= Math.sign(this.move.y);              // 移動距離のy座標が0になるまで減算
 
-            if (this.position.x < 0) {                              // マップのループに対応するためにx座標を更新
-                this.position.x += MAP_COLUMN;
-            } else if(this.position.x >= MAP_COLUMN) {
-                this.position.x %= MAP_COLUMN;
+            if (this.position.x < 0) {                          // マップのループに対応するためにx座標を更新
+                this.position.x += MAP_COLUMN * TILE_SIZE;
+            } else if(this.position.x >= MAP_COLUMN * TILE_SIZE) {
+                this.position.x %= MAP_COLUMN * TILE_SIZE;
             }
-            if (this.position.y < 0) {                              // マップのループに対応するためにy座標を更新
-                this.position.y += MAP_ROW;
-            } else if(this.position.y >= MAP_ROW) {
-                this.position.y %= MAP_ROW;
+            if (this.position.y < 0) {                          // マップのループに対応するためにy座標を更新
+                this.position.y += MAP_ROW * TILE_SIZE;
+            } else if(this.position.y >= MAP_ROW * TILE_SIZE) {
+                this.position.y %= MAP_ROW * TILE_SIZE;
             }
-    
-            this.relative = this.position.sub(middlePoint);         // 中心の初期値からの相対座標を更新
         }
     }
 }
@@ -202,10 +206,9 @@ class Player extends Character {
         this.img.src = "img/player.png";                // プレイヤーチップファイル
         this.con = fieldCon;                            // 2D描画コンテキストを取得
         this.position = new Vector2(
-            START_X
-            , START_Y
-        );                                              // 座標
-        this.relative = this.position.sub(middlePoint); // 中心からの相対座標
+            START_X * TILE_SIZE + TILE_SIZE / 2
+            , START_Y * TILE_SIZE + TILE_SIZE / 2
+        );                                              // 座標　ドット単位
         this.angle = 0;                                 // 向き
         this.act = 0;                                   // 動き
         this.move = new Vector2(0, 0);                  // 移動量
@@ -213,8 +216,8 @@ class Player extends Character {
     draw() {
         this.con.drawImage(
             this.img
-            , this.act
-            , this.angle
+            , this.act * CHAR_COLUMN
+            , this.angle * CHAR_ROW
             , CHAR_COLUMN
             , CHAR_ROW
             , FIELD_WIDTH / 2 - CHAR_COLUMN / 2
@@ -239,21 +242,28 @@ class Vector2 {
      */
     add(b) {
         let a = this;
-        return new Vector2(a.x+b.x, a.y+b.y);
+        return new Vector2(a.x + b.x, a.y + b.y);
     }
     /**
      * @param {Vector2} b 引きたいベクトル
      */
     sub(b) {
         let a = this;
-        return new Vector2(a.x-b.x, a.y-b.y);
+        return new Vector2(a.x - b.x, a.y - b.y);
     }
     /**
      * このベクトルの実数s倍を求める。
      * @param {number} s 何倍するか
      */
     mult(s) {
-        return new Vec2(s*this.x, s*this.y);
+        return new Vector2(s * this.x, s * this.y);
+    }
+    /**
+     * このベクトルの実数s倍を求める。
+     * @param {number} s 何倍するか
+     */
+    div(s) {
+        return new Vector2(this.x / s, this.y / s);
     }
     /**
      * このベクトルの大きさを求める。
@@ -272,10 +282,6 @@ window.onload = function() {
     field.height = FIELD_HEIGHT;                    // フィールドの定義　高さ
     fieldCon = field.getContext("2d");              // フィールドの2D描画コンテキストを取得
 
-    middlePoint = new Vector2(
-        Math.floor(FIELD_WIDTH / TILE_SIZE / 2)
-        , Math.floor(FIELD_HEIGHT / TILE_SIZE / 2)
-    );                                              // 中点の初期座標の定義
     imgMap = new Map();                             // マップの定義
     player = new Player();                          // プレイヤーの定義
     //character = new Character();
@@ -323,7 +329,7 @@ function ScreenDepiction() {
 }
 
 function mainDepiction(){
-    imgMap.draw("main", player);
+    imgMap.draw("main", player.position);
     if (DEBUG_MODE) {
         fieldCon.fillStyle = "#ff0000";// 中心の描画
         fieldCon.fillRect(0, FIELD_HEIGHT / 2 - 1, FIELD_WIDTH, 2);
@@ -333,12 +339,12 @@ function mainDepiction(){
         fieldCon.fillRect(20, 103, 105, 15)
         fieldCon.font = FONT;
         fieldCon.fillStyle =  FONT_STYLE;
-        fieldCon.fillText("X = " + Math.floor(player.position.x) + ", Y = " + Math.floor(player.position.y), 25, 115);
+        fieldCon.fillText("X = " + Math.floor(player.position.x / TILE_SIZE) + ", Y = " + Math.floor(player.position.y / TILE_SIZE), 25, 115);
     }
     //character.draw(player.position);
     player.draw();
 }
 
 function getMapIndex(type, x, y) {
-    return MAP[type][(x + MAP_COLUMN) % MAP_COLUMN + (y + MAP_ROW) % MAP_ROW * MAP_COLUMN];
+    return MAP[type][(Math.floor(x) + MAP_COLUMN) % MAP_COLUMN + (Math.floor(y) + MAP_ROW) % MAP_ROW * MAP_COLUMN];
 }
