@@ -1,9 +1,9 @@
 "use strict"
 
 const DEBUG_MODE = true;
-const FONT = "12px monospace";                  // 使用フォント
-const FONT_STYLE = "white";                     // 文字色
-const WINDOW_STYLE = "rgba(0, 0, 0, 0.75)";     // 情報ウィンドウの色
+const FONT = "10px 'ＭＳ ゴシック'";                  // 使用フォント
+const FONT_STYLE = "rgba(255, 255, 255, 0.8)"; // 文字色
+const WINDOW_STYLE = "rgba(0, 0, 0, 0.8)";     // 情報ウィンドウの色
 const SCREEN_WIDTH = 128;                       // 仮想画面サイズ 幅（ドット）
 const SCREEN_HEIGHT = 120;                      // 仮想画面サイズ 高さ（ドット）
 const TILE_SIZE = 8;                            // タイルサイズ（ドット）
@@ -16,8 +16,8 @@ const ANGLE_UP = 3                              // キャラの向きインデ�
 
 const START_X = 15;                             // プレイヤー開始x座標（タイル）
 const START_Y = 17;                             // プレイヤー開始y座標（タイル）
-const MAP_COLUMN = 32;                          // マップ高さ（タイル）
-const MAP_ROW = 32;                             // マップ幅（タイル）
+const MAP_COLUMN = 32;                          // マップ幅（タイル）
+const MAP_ROW = 32;                             // マップ高さ（タイル）
 const MAP_CHIP_COLUMN = 4;                      // マップチップ桁数（タイル）
 const MAP_CHIP_ROW = 4;                         // マップチップ行数（タイル）
 const FIELD_MAP = {                             // マップ マップチップのタイルインデックスで定義
@@ -68,6 +68,7 @@ let player;                             // プレイヤー
 let character;                          // キャラクター
 let frame = 0;                          // 内部カウンタ
 let keyBuffer = new Uint8Array(0x100);	// キーバッファ
+let opacity = 0.8;                      // 操作キー説明の不透明度
 
 /**
  * マップクラス
@@ -391,15 +392,37 @@ function ScreenDepiction() {
 function mainDepiction(){
     map.draw("main", player.position);
     if (DEBUG_MODE) {
-        screenCon.fillStyle = "#ff0000";                                // 中線の描画
+        screenCon.fillStyle = "#ff0000";                                // 中線の描画　デバッグ用
         screenCon.fillRect(0, SCREEN_HEIGHT / 2 - 1, SCREEN_WIDTH, 2);
         screenCon.fillRect(SCREEN_WIDTH /2 - 1, 0, 2, SCREEN_HEIGHT);
+    }
+    screenCon.fillStyle = WINDOW_STYLE;                                 // メッセージウィンドウ
+    screenCon.fillRect(3, 105, 122, 12)
+    screenCon.font = FONT;
+    screenCon.fillStyle =  FONT_STYLE;
+    screenCon.fillText(
+        "X=" + Math.floor(player.position.x / TILE_SIZE) + ", Y=" + Math.floor(player.position.y / TILE_SIZE)
+        , 35
+        , 115
+    );
 
-        screenCon.fillStyle = WINDOW_STYLE;
-        screenCon.fillRect(20, 103, 105, 15)
-        screenCon.font = FONT;
-        screenCon.fillStyle =  FONT_STYLE;
-        screenCon.fillText("X = " + Math.floor(player.position.x / TILE_SIZE) + ", Y = " + Math.floor(player.position.y / TILE_SIZE), 25, 115);
+    if (opacity > 0) {                                                  // 操作キーウィンドウ
+        if (frame > 165) {
+            opacity -= 1 / 100;                                         // 時間経過でフェードアウト
+            screenCon.fillStyle = "rgba(0, 0, 0, " + opacity +")";
+            screenCon.fillRect(100, 3, 25, 42)
+            screenCon.font = FONT_STYLE;
+            screenCon.fillStyle =  "rgba(255, 255, 255, " + opacity +")";
+        } else {
+            screenCon.fillStyle = WINDOW_STYLE;
+            screenCon.fillRect(100, 3, 25, 42)
+            screenCon.font = FONT_STYLE;
+            screenCon.fillStyle =  FONT_STYLE;
+        }
+        screenCon.fillText("↑=W", 102, 12);
+        screenCon.fillText("←=a", 102, 22);
+        screenCon.fillText("→=d", 102, 32);
+        screenCon.fillText("↓=s", 102, 42);
     }
     //character.draw(player.position);
     player.draw();
