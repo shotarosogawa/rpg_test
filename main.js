@@ -1,9 +1,12 @@
 "use strict"
 
-const DEBUG_MODE = true;
-const FONT = "10px 'ＭＳ ゴシック'";                  // 使用フォント
-const FONT_STYLE = "rgba(255, 255, 255, 0.8)"; // 文字色
-const WINDOW_STYLE = "rgba(0, 0, 0, 0.8)";     // 情報ウィンドウの色
+const DEVELOP_MODE = true;
+const DEVELOP_SPEED = 4;
+const FPS = 33;                                 // フレームレート
+const FONT = "'ＭＳ ゴシック'";             // 使用フォント
+const FONT_SIZE = 10;             // 使用フォント
+const FONT_STYLE = "rgba(255, 255, 255, 0.8)";  // 文字色
+const WINDOW_STYLE = "rgba(0, 0, 0, 0.8)";      // 情報ウィンドウの色
 const SCREEN_WIDTH = 128;                       // 仮想画面サイズ 幅（ドット）
 const SCREEN_HEIGHT = 120;                      // 仮想画面サイズ 高さ（ドット）
 const TILE_SIZE = 8;                            // タイルサイズ（ドット）
@@ -69,6 +72,19 @@ let character;                          // キャラクター
 let frame = 0;                          // 内部カウンタ
 let keyBuffer = new Uint8Array(0x100);	// キーバッファ
 let opacity = 0.8;                      // 操作キー説明の不透明度
+let accessDenyTiles = [
+    0, 1, 2, 4, 5, 8, 9, 10, 11
+];
+let eventTarget = {
+    castle: {
+        tiles: [4, 5, 8, 9]
+        , text: "マオウをたおして！"
+    }
+    , village: {
+        tiles: [10, 11]
+        , text: "にしのハテにも\r\nむらがあります"
+    }
+}
 
 /**
  * マップクラス
@@ -146,6 +162,10 @@ class Character {
             position.x * TILE_SIZE + TILE_SIZE / 2              // 開始位置のタイル座標をドット座標に変換
             , position.y * TILE_SIZE + TILE_SIZE / 2            // 開始位置のタイル座標をドット座標に変換
         );
+        this.forward = new Vector2(                         // 座標
+            this.position.x                                 // 前方のタイル座標をドット座標に変換
+            , this.position.y + TILE_SIZE                       // 前方のタイル座標をドット座標に変換
+        );
         this.angle = 0;                                     // 向き
         this.act = 0;                                       // 動き
         this.move = new Vector2(0, 0);                      // 移動量
@@ -153,6 +173,7 @@ class Character {
             CHAR_WIDTH / 2                                      // キャラの幅の1/2
             , CHAR_HEIGHT - TILE_SIZE / 2                       // キャラの高さ - タイルサイズの1/2
         );
+        this.speed = DEVELOP_MODE ? DEVELOP_SPEED : 1       // 移動スピード
     }
     /**
      * キャラクターの描画を行う
@@ -182,32 +203,38 @@ class Character {
             if (keyBuffer["a"]) {                               // 左に動く
                 this.move.x = -TILE_SIZE;
                 this.angle = ANGLE_LEFT;
+                this.forward = this.position.add(this.move);
             } else if (keyBuffer["w"]) {                        // 上に動く
                 this.move.y = -TILE_SIZE;
                 this.angle = ANGLE_UP;
+                this.forward = this.position.add(this.move);
             } else if (keyBuffer["d"]) {                        // 右に動く
                 this.move.x = TILE_SIZE;
                 this.angle = ANGLE_RIGHT;
+                this.forward = this.position.add(this.move);
             } else if (keyBuffer["s"]) {                        // 下に動く
                 this.move.y = TILE_SIZE;
                 this.angle = ANGLE_DOWN;
+                this.forward = this.position.add(this.move);
             }
         }
 
         index = getMapIndex(                                // 移動後のタイルのインデックスを取得
             "main"                                              // 使用するマップの種類を指定
-            , this.position.add(this.move).x / TILE_SIZE        // 使用するマップタイルの座標 x値　移動後のドット座標をタイル座標に変換
-            , this.position.add(this.move).y / TILE_SIZE        // 使用するマップタイルの座標 y値　移動後のドット座標をタイル座標に変換
+            , this.forward.x / TILE_SIZE                        // 使用するマップタイルの座標 x値　移動後のドット座標をタイル座標に変換
+            , this.forward.y / TILE_SIZE                        // 使用するマップタイルの座標 y値　移動後のドット座標をタイル座標に変換
         );
-        if (index === 0 || index === 1 || index === 2) {    // 移動後のタイルが移動不可の場合
+        if (accessDenyTiles.includes(index)) {    // 移動後のタイルが移動不可の場合
             this.move.x = 0;                                    // 移動距離のx座標を0とする
             this.move.y = 0;                                    // 移動距離のy座標を0とする
         }
         if (this.move.mag() != 0) {                         // 移動距離が0でない場合、座標の更新を行う
-            this.position.x += Math.sign(this.move.x);          // 座標の更新　x値
-            this.position.y += Math.sign(this.move.y);          // 座標の更新　y値
-            this.move.x -= Math.sign(this.move.x);              // 移動距離のx座標が0になるまで減算
-            this.move.y -= Math.sign(this.move.y);              // 移動距離のy座標が0になるまで減算
+            if(DEVELOP_MODE) this.move.mult(4);
+
+            this.position.x += sign(this.move.x) * this.speed;  // 座標の更新　x値
+            this.position.y += sign(this.move.y) * this.speed;  // 座標の更新　y値
+            this.move.x -= sign(this.move.x) * this.speed;      // 移動距離のx座標が0になるまで減算
+            this.move.y -= sign(this.move.y) * this.speed;      // 移動距離のy座標が0になるまで減算
 
             if (this.position.x < 0) {                          // マップのループに対応するためにx座標を更新
                 this.position.x += MAP_COLUMN * TILE_SIZE;
@@ -236,6 +263,10 @@ class Player extends Character {
             START_X * TILE_SIZE + TILE_SIZE / 2             // 開始位置のタイル座標をドット座標に変換
             , START_Y * TILE_SIZE + TILE_SIZE / 2           // 開始位置のタイル座標をドット座標に変換
         );
+        this.forward = new Vector2(                     // 座標
+            this.position.x                                 // 前方のタイル座標をドット座標に変換
+            , this.position.y + TILE_SIZE                   // 前方のタイル座標をドット座標に変換
+        );
         this.angle = 0;                                 // 向き
         this.act = 0;                                   // 動き
         this.move = new Vector2(0, 0);                  // 移動量
@@ -243,6 +274,7 @@ class Player extends Character {
             CHAR_WIDTH / 2                                  // キャラの幅の1/2
             , CHAR_HEIGHT - TILE_SIZE / 2                   // キャラの高さ - タイルサイズの1/2
         );
+        this.speed = DEVELOP_MODE ? DEVELOP_SPEED : 1   // 移動スピード
     }
     /**
      * プレイヤーの描画を行う
@@ -331,7 +363,7 @@ window.onload = function() {
             ProcessingPerFrame();
             frame++;
         }
-        , 33
+        , Math.floor(1 / FPS * 1000)
     );
 }
 /**
@@ -380,7 +412,7 @@ function ProcessingPerFrame() {
  */
 function ScreenDepiction() {
     mainDepiction();
-    if (DEBUG_MODE) {
+    if (DEVELOP_MODE) {
         canvasCon.imageSmoothingEnabled = 0;
     }
     canvasCon.drawImage(screen, 0, 0, screen.width, screen.height, 0, 0, fieldWidth, fieldHeight)
@@ -391,32 +423,23 @@ function ScreenDepiction() {
  */
 function mainDepiction(){
     map.draw("main", player.position);
-    if (DEBUG_MODE) {
+    if (DEVELOP_MODE) {
         screenCon.fillStyle = "#ff0000";                                // 中線の描画　デバッグ用
         screenCon.fillRect(0, SCREEN_HEIGHT / 2 - 1, SCREEN_WIDTH, 2);
         screenCon.fillRect(SCREEN_WIDTH /2 - 1, 0, 2, SCREEN_HEIGHT);
     }
-    screenCon.fillStyle = WINDOW_STYLE;                                 // メッセージウィンドウ
-    screenCon.fillRect(3, 105, 122, 12)
-    screenCon.font = FONT;
-    screenCon.fillStyle =  FONT_STYLE;
-    screenCon.fillText(
-        "X=" + Math.floor(player.position.x / TILE_SIZE) + ", Y=" + Math.floor(player.position.y / TILE_SIZE)
-        , 35
-        , 115
-    );
 
     if (opacity > 0) {                                                  // 操作キーウィンドウ
         if (frame > 165) {
             opacity -= 1 / 100;                                         // 時間経過でフェードアウト
             screenCon.fillStyle = "rgba(0, 0, 0, " + opacity +")";
             screenCon.fillRect(100, 3, 25, 42)
-            screenCon.font = FONT_STYLE;
+            screenCon.font = FONT_SIZE + "px" + FONT;
             screenCon.fillStyle =  "rgba(255, 255, 255, " + opacity +")";
         } else {
             screenCon.fillStyle = WINDOW_STYLE;
             screenCon.fillRect(100, 3, 25, 42)
-            screenCon.font = FONT_STYLE;
+            screenCon.font = FONT_SIZE + "px" + FONT;
             screenCon.fillStyle =  FONT_STYLE;
         }
         screenCon.fillText("↑=W", 102, 12);
@@ -426,6 +449,7 @@ function mainDepiction(){
     }
     //character.draw(player.position);
     player.draw();
+    eventWindow(player);
 }
 
 /**
@@ -439,4 +463,56 @@ function getMapIndex(type, x, y) {
     let my = (Math.floor(y) + MAP_ROW) % MAP_ROW;
 
     return FIELD_MAP[type][mx + my * MAP_COLUMN];
+}
+
+/**
+ * 引数として渡された数値の符号が正か負かを返す
+ * @param {number} num
+ */
+function sign(num) {
+    let result;
+
+    if (num > 0) {
+        result = 1;
+    } else if (num < 0) {
+        result = -1
+    } else {
+        result = 0;
+    }
+
+    return result;
+}
+
+function eventWindow(player) {
+    let index;
+    let text;
+    let lineHeight = 1.1618;
+
+    index = getMapIndex(                                // 移動後のタイルのインデックスを取得
+        "main"                                              // 使用するマップの種類を指定
+        , player.forward.x / TILE_SIZE                      // 使用するマップタイルの座標 x値　プレイヤー前方のドット座標をタイル座標に変換
+        , player.forward.y / TILE_SIZE                      // 使用するマップタイルの座標 y値　プレイヤー前方のドット座標をタイル座標に変換
+    );
+    if (eventTarget.castle.tiles.includes(index)) {                   // 移動後のタイルが移動不可の場合
+        text = eventTarget.castle.text;
+    } else if (eventTarget.village.tiles.includes(index)) {                   // 移動後のタイルが移動不可の場合
+        text = eventTarget.village.text;
+    }
+
+    if (text) {
+        let texts=text.split( "\n" );
+        let l=texts.length;
+
+        screenCon.fillStyle = WINDOW_STYLE;                                 // メッセージウィンドウ
+        screenCon.fillRect(3, 93, 122, 24)
+        screenCon.font = FONT_SIZE + "px" + FONT;
+        screenCon.fillStyle =  FONT_STYLE;
+        for(let i=0; l > i; i++) {
+            screenCon.fillText(
+                texts[i]
+                , 5
+                , 103 + FONT_SIZE * lineHeight * i
+            );
+        }
+    }
 }
