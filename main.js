@@ -1,10 +1,10 @@
 "use strict"
 
-const DEVELOP_MODE = false;
+const DEVELOP_MODE = true;
 const DEVELOP_SPEED = 4;
 const FPS = 33;                                 // フレームレート
-const FONT = "'ＭＳ ゴシック'";             // 使用フォント
-const FONT_SIZE = 10;             // 使用フォント
+const FONT = "'ＭＳ ゴシック'";                  // 使用フォント
+const FONT_SIZE = 10;                           // 使用フォントサイズ
 const FONT_STYLE = "rgba(255, 255, 255, 0.8)";  // 文字色
 const WINDOW_STYLE = "rgba(0, 0, 0, 0.8)";      // 情報ウィンドウの色
 const SCREEN_WIDTH = 128;                       // 仮想画面サイズ 幅（ドット）
@@ -66,10 +66,6 @@ let fieldHeight;                        // 実画面サイズ 高さ
 let fieldWidth;                         // 実画面サイズ 幅
 let screen;                             // 仮想画面
 let screenCon;                          // 仮想画面の2D描画コンテキスト
-let map;                                // マップ
-let scene;
-let player;                             // プレイヤー
-let character;                          // キャラクター
 let frame = 0;                          // 内部カウンタ
 let keyBuffer = new Uint8Array(0x100);	// キーバッファ
 let opacity = 0.8;                      // 操作キー説明の不透明度
@@ -109,6 +105,9 @@ class EventDispatcher {
     }
 }
 
+/**
+ * ゲーム情報クラス
+ */
 class GameInformation {
     constructor(title, screenRectangle, maxFps, currentFps) {
         this.title = title;
@@ -118,7 +117,18 @@ class GameInformation {
     }
 }
 
+/**
+ * ゲームクラス
+ * ゲームそのものの管理　シーンの切り替えなどを行う
+ */
 class Game {
+    /**
+     * コンストラクタ
+     * @param {string} title タイトル
+     * @param {number} width 幅
+     * @param {number} height 高さ
+     * @param {number} maxFps 最大fps
+     */
     constructor(title, width, height, maxFps) {
         this.title = title;
         this.width = width;
@@ -126,30 +136,44 @@ class Game {
         this.maxFps = maxFps;
         this.currentFps = 0;
 
-        this.screenCanvas = document.createElement('canvas');
+        this.canvas = document.getElementById("main");          // mainキャンバスの要素を取得
+
+        this.screenCanvas = document.createElement('canvas');   // 仮想画面の作成
         this.screenCanvas.height = height;
         this.screenCanvas.width = width;
 
-        this._inputReceiver = new InputReceiver();
+        //this._inputReceiver = new InputReceiver();            // 後々実装したい
         this._prevTimestamp = 0;
+
+        this.addEventListener
 
         console.log(`${title}が初期化されました。`);
     }
 
+    /**
+     * シーンの変更
+     * @param {Scene} scene タイトル
+     */
     changeScene(scene) {
         this.currentScene = scene;
         this.currentScene.addEventListener('changescene', (e) => this.changeScene(e.target));
         console.log(`シーンが${scene.name}に切り替わりました。`);
     }
 
+    /**
+     * ゲームの開始
+     */
     start() {
         requestAnimationFrame(this._loop.bind(this));
     }
 
+    /**
+     * フレームごとの処理
+     */
     _loop(timestamp) {
         const elapsedSec = (timestamp - this._prevTimestamp) / 1000;
-        const accuracy = 0.9; // あまり厳密にするとフレームが飛ばされることがあるので
-        const frameTime = 1 / this.maxFps * accuracy; // 精度を落とす
+        const accuracy = 0.9;                           // あまり厳密にするとフレームが飛ばされることがあるので
+        const frameTime = 1 / this.maxFps * accuracy;   // 精度を落とす
         if(elapsedSec <= frameTime) {
             requestAnimationFrame(this._loop.bind(this));
             return;
@@ -159,63 +183,129 @@ class Game {
         this.currentFps = 1 / elapsedSec;
 
         const screenRectangle = new Rectangle(0, 0, this.width, this.height);
-        const info = new GameInformation(this.title, screenRectangle,
-                                         this.maxFps, this.currentFps);
-        const input = this._inputReceiver.getInput();
+        const info = new GameInformation(
+            this.title
+            , screenRectangle
+            , this.maxFps
+            , this.currentFps
+        );
+        // const input = this._inputReceiver.getInput();    // 後々実装したい
         this.currentScene.update(info);
 
         requestAnimationFrame(this._loop.bind(this));
     }
 }
 
-class DanamkuStgGame extends Game {
+
+class DragonQuestGame extends Game {
     constructor() {
-        super('DQ', 300, 400, FPS);
-        const titleScene = new DanmakuStgTitleScene(this.screenCanvas);
+        super('DQ', SCREEN_WIDTH, SCREEN_HEIGHT, FPS);
+        const titleScene = new FieldMap(this.canvas, this.screenCanvas);
         this.changeScene(titleScene);
     }
 }
 
-/*
-ブラウザ上でキーを押すと、keydownイベント、keyupイベントが発生するのでそれを受け取って記録します。
-getInputメソッドが呼び出されると、前回の入力と現在の入力を使って、Inputオブジェクトを作ります。
-*/
-
-class Scene extends EventDispatcher {//Actorをまとめあげる舞台の役割、シーンの定義
-    constructor(renderingTarget) {
+/**
+ * シーンクラス
+ * フィールドやバトルなど、シーンごとにゲームオブジェクト全体の制御を行う
+ */
+class Scene extends EventDispatcher {
+    /**
+     * コンストラクタ
+     * @param {Object} canvas   マップの種類
+     * @param {Object} renderingTarget 描画対象
+     */
+    constructor(canvas, renderingTarget) {
         super();
-        this.objects = [];
-        this.renderingTarget = renderingTarget;
+        this.objects = [];                              // ゲームオブジェクト一覧
+        this.canvas = canvas;                           // キャンバス
+        this.canvasContext = canvas.getContext("2d");   // 実画面コンテキスト
+        this.renderingTarget = renderingTarget;         // 仮想画面
+
+        this.canvasResize();
+        this.targetWidth = this.canvas.width
+        this.targetHeight = this.canvas.height
         //this.accessDenyTiles = info.accessDenyTiles;
 
         this._destroyedObjects = [];
     }
 
+    /**
+     * ゲームオブジェクトの追加
+     * @param {GameObject} object
+     */
     add(object) {
         this.objects.push(object);
-        object.addEventListener('spawnactor', (e) => this.add(e.target));
-        object.addEventListener('destroy', (e) => this._addDestroyedActor(e.target));
+        object.addEventListener(
+            'spawnactor'
+            , (e) => this.add(e.target)
+        );
+        object.addEventListener(
+            'destroy'
+            , (e) => this._addDestroyedActor(e.target)
+        );
     }
 
+    /**
+     * ゲームオブジェクトの削除
+     * @param {GameObject} object
+     */
     remove(object) {
         const index = this.objects.indexOf(object);
         this.objects.splice(index, 1);
     }
 
-    update() {//updateメソッドではシーンに登録されているActor全てを更新し、当たり判定を行い、描画します。描画の前に一度画面全体をクリアするのを忘れないで下さい。
+    /**
+     * シーンの変更
+     * @param {Scene} scene
+     */
+    changeScene(scene) {
+        const event = new GameEvent(scene);
+        this.dispatchEvent('changescene', event);
+    }
+
+    /**
+     * シーンの更新
+     * @param {GameInformation} gameInfo
+     */
+    update(gameInfo) {//updateメソッドではシーンに登録されているActor全てを更新し、当たり判定を行い、描画します。描画の前に一度画面全体をクリアするのを忘れないで下さい。
         this._updateAll();
         this._collisionDetection();//当たり判定を処理する
         this._accessDenyDetection();//侵入不可判定を処理する
         this._disposeDestroyedObjects();
-        //this._clearScreen(gameInfo);
+        this._clearScreen(gameInfo);
         this._drawAll();
     }
+    /**
+     * キャンバスサイズの設定
+     */
+    canvasResize() { 
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
 
+        if (this.canvas.width / SCREEN_WIDTH < this.canvas.height / SCREEN_HEIGHT){
+            this.targetHeight = SCREEN_HEIGHT * this.canvas.width / SCREEN_WIDTH;
+            this.targetWidth = this.canvas.width;
+        } else {
+            this.targetHeight = this.canvas.height;
+            this.targetWidth = SCREEN_WIDTH * this.canvas.height / SCREEN_HEIGHT;
+        }
+
+        //this.addEventListener('resize', (e) => this.canvasResize());
+    }
+
+    /**
+     * 全てゲームオブジェクトの一括更新
+     * @param {GameInformation} gameInfo
+     */
     _updateAll() {
         this.objects.forEach((object) => object.update());
     }
 
-    _collisionDetection() {//当たり判定を処理する
+    /**
+     * 当たり判定を処理する
+     */
+    _collisionDetection() {
         const length = this.objects.length;
 
         let obj1;
@@ -227,7 +317,7 @@ class Scene extends EventDispatcher {//Actorをまとめあげる舞台の役割
                 if (i === j) continue;
                 obj1 = this.objects[i];
                 obj2 = this.objects[j];
-                if (obj1.destination.sub(obj1.position).mag >= obj2.destination.sub(obj2.position).mag) {
+                if (obj1.destination.sub(obj1.position).mag >= obj2.destination.sub(obj2.position).mag) { // obj1が既に移動を始めている時は判定を行わない
                     collision = obj1.destinationArea.collisionDetection(obj2.collisionArea);
                     if(collision) {
                         obj1.dispatchEvent('collision', new GameEvent(obj2));
@@ -237,7 +327,10 @@ class Scene extends EventDispatcher {//Actorをまとめあげる舞台の役割
         }
     }
 
-    _accessDenyDetection() {//侵入不可判定を処理する
+    /**
+     * 侵入不可判定を処理する
+     */
+    _accessDenyDetection() {
         const length = this.objects.length;
 
         let obj;
@@ -250,13 +343,17 @@ class Scene extends EventDispatcher {//Actorをまとめあげる舞台の役割
                 , obj.destination.x / TILE_SIZE                     // 使用するマップタイルの座標 x値　移動後のドット座標をタイル座標に変換
                 , obj.destination.y / TILE_SIZE                     // 使用するマップタイルの座標 y値　移動後のドット座標をタイル座標に変換
             );
-            //if(this.accessDenyTiles.includes(index)) {
+            //if(this.accessDenyTiles.includes(index)) {            // configファイルで（以下略
             if(accessDenyTiles.includes(index)) {
                 obj.dispatchEvent('collision', new GameEvent(obj));
             }
         }
     }
 
+    /**
+     * 描画のクリア
+     * @param {GameInformation} gameInfo
+     */
     _clearScreen(gameInfo) {
         const context = this.renderingTarget.getContext('2d');
         const width = gameInfo.screenRectangle.width;
@@ -265,14 +362,36 @@ class Scene extends EventDispatcher {//Actorをまとめあげる舞台の役割
         context.fillRect(0, 0, width, height);
     }
 
+    /**
+     * 全ての要素を一括描画
+     */
     _drawAll() {
         this.objects.forEach((obj) => obj.draw(this.renderingTarget));
+        this.canvasContext.drawImage(
+            this.renderingTarget
+            , 0
+            , 0
+            , this.renderingTarget.width
+            , this.renderingTarget.height
+            , 0
+            , 0
+            , this.targetWidth
+            , this.targetHeight
+        );
     }
 
+    /**
+     * 削除予定のゲームオブジェクトを配列で管理
+     * @param {GameInformation} gameInfo
+     */
     _addDestroyedObject(object) {
         this._destroyedObjects.push(object);
     }
 
+    /**
+     * ゲームオブジェクトを一括削除
+     * @param {GameInformation} gameInfo
+     */
     _disposeDestroyedObjects() {
         this._destroyedObjects.forEach((object) => this.remove(object));
         this._destroyedObjects = [];
@@ -280,32 +399,42 @@ class Scene extends EventDispatcher {//Actorをまとめあげる舞台の役割
 }
 
 /**
- * マップクラス
+ * フィールドマップシーンクラス
  */
 class FieldMap extends Scene {
-    constructor(renderingTarget) {
-        super(renderingTarget);
+    /**
+     * コンストラクタ
+     * @param {Object} canvas   マップの種類
+     * @param {Object} renderingTarget 描画対象
+     */
+    constructor(canvas, renderingTarget) {
+        super(canvas, renderingTarget);
         this.img = new Image();
-        this.img.src = "img/map.png";                                   // マップチップファイル
-        this.con = screenCon;                                           // 2D描画コンテキスト
-        this.middlePointPos = new Vector2(                              // 画面の中心点のドット座標
-            SCREEN_WIDTH / 2                                                // 仮想画面サイズの1/2
-            , SCREEN_HEIGHT / 2                                             // 仮想画面サイズの1/2
+        this.img.src = "img/map.png";                               // マップチップファイル
+        this.name = "field map"
+        this.middlePointPos = new Vector2(                          // 画面の中心点のドット座標
+            SCREEN_WIDTH / 2                                            // 仮想画面サイズの1/2
+            , SCREEN_HEIGHT / 2                                         // 仮想画面サイズの1/2
         );
-        this.drawRange = new Vector2(                                   // 描画範囲
-            Math.ceil(this.middlePointPos.x / TILE_SIZE)                    // 画面の中心点のドット座標をタイル座標に変換　ドット単位で描画するので小数切り上げで余裕を持って描画する
-            , Math.ceil(this.middlePointPos.y / TILE_SIZE)                  // 画面の中心点のドット座標をタイル座標に変換　ドット単位で描画するので小数切り上げで余裕を持って描画する   
+        this.drawRange = new Vector2(                               // 描画範囲
+            Math.ceil(this.middlePointPos.x / TILE_SIZE)                // 画面の中心点のドット座標をタイル座標に変換　ドット単位で描画するので小数切り上げで余裕を持って描画する
+            , Math.ceil(this.middlePointPos.y / TILE_SIZE)              // 画面の中心点のドット座標をタイル座標に変換　ドット単位で描画するので小数切り上げで余裕を持って描画する   
         );
+
+        const player = new Player();                                // プレイヤーの定義
+        const character = new Character(["character"], 23, 20);     // キャラクターの定義　一覧をconfigファイルとかで定義しておいて、一括で実施したい
+        this.add(player);
+        this.add(character);
     }
     
     /**
      * プレイヤーの座標を基準にマップの描画を行う
-     * @param {string}  type   マップの種類
-     * @param {Vector2} playerPos プレイヤー座標
+     * @param {string} type   マップの種類
+     * @param {Object} target 描画対象
+     * @param {Player} player プレイヤー座標
      */
-    mapDraw(type, target) {
+    mapDraw(type, target, player) {
         const context = target.getContext("2d");
-        const player = this._getPlayerInfo();
 
         let mx;                                                         // 描画するマップタイルのタイル座標 x値
         let my;                                                         // 描画するマップタイルのタイル座標 y値
@@ -313,44 +442,59 @@ class FieldMap extends Scene {
         let dy;                                                         // 描画イメージ矩形のタイル座標 y値
         let index;                                                      // マップタイルのインデックス
         let drawCorrection = new Vector2(                               // 描画イメージ矩形の補正値　プレイヤーがタイル中央に描画されるように補正する
-            player.position.x % TILE_SIZE - this.middlePointPos.x % TILE_SIZE     // プレーヤーのタイル座標 小数部 x値 - 画面中心点のタイル座標 小数部 x値
-            , player.position.y % TILE_SIZE - this.middlePointPos.y % TILE_SIZE   // プレーヤーのタイル座標 小数部 y値 - 画面中心点のタイル座標 小数部 y値
+            player.position.x % TILE_SIZE - this.middlePointPos.x % TILE_SIZE   // プレーヤーのタイル座標 小数部 x値 - 画面中心点のタイル座標 小数部 x値
+            , player.position.y % TILE_SIZE - this.middlePointPos.y % TILE_SIZE // プレーヤーのタイル座標 小数部 y値 - 画面中心点のタイル座標 小数部 y値
         );
         
         for (let y = -this.drawRange.y; y <= this.drawRange.y; y++) {
-            my = y + Math.floor(player.position.y / TILE_SIZE);                   // 使用するマップタイルの座標 y値　プレイヤー座標を基準に描画するので、プレーヤーのタイル座標の整数部を加算
-            dy = y + Math.floor(this.middlePointPos.y / TILE_SIZE);         // 描画イメージ矩形の座標 y値　　　基準とするプレイヤーはマップの中心点に描画するので、画面の中心点のタイル座標の整数部を加算
+            my = y + Math.floor(player.position.y / TILE_SIZE);                 // 使用するマップタイルの座標 y値　プレイヤー座標を基準に描画するので、プレーヤーのタイル座標の整数部を加算
+            dy = y + Math.floor(this.middlePointPos.y / TILE_SIZE);             // 描画イメージ矩形の座標 y値　　　基準とするプレイヤーはマップの中心点に描画するので、画面の中心点のタイル座標の整数部を加算
             for (let x = -this.drawRange.x; x <= this.drawRange.x; x++) {
-                mx = x + Math.floor(player.position.x / TILE_SIZE);                   // 使用するマップタイルの座標 x値　プレイヤー座標を基準に描画するので、プレーヤーのタイル座標の整数部を加算
-                dx = x + Math.floor(this.middlePointPos.x / TILE_SIZE);         // 描画イメージ矩形の座標 x値　　　基準とするプレイヤーはマップの中心点に描画するので、画面の中心点のタイル座標の整数部を加算
-                index = getMapIndex(                                            // 描画するタイルのインデックスを取得
-                    type                                                            // 使用するマップの種類を指定
-                    , mx                                                            // 使用するマップタイルの座標 x値
-                    , my                                                            // 使用するマップタイルの座標 y値
+                mx = x + Math.floor(player.position.x / TILE_SIZE);                     // 使用するマップタイルの座標 x値　プレイヤー座標を基準に描画するので、プレーヤーのタイル座標の整数部を加算
+                dx = x + Math.floor(this.middlePointPos.x / TILE_SIZE);                 // 描画イメージ矩形の座標 x値　　　基準とするプレイヤーはマップの中心点に描画するので、画面の中心点のタイル座標の整数部を加算
+                index = getMapIndex(                                                    // 描画するタイルのインデックスを取得
+                    type                                                                    // 使用するマップの種類を指定
+                    , mx                                                                    // 使用するマップタイルの座標 x値
+                    , my                                                                    // 使用するマップタイルの座標 y値
                 );
 
                 context.drawImage(
-                    this.img                                                        // 描画するイメージ
-                    , (index % MAP_CHIP_COLUMN) * TILE_SIZE                         // 元イメージ使用範囲の矩形のx座標
-                    , Math.floor(index / MAP_CHIP_ROW) * TILE_SIZE                  // 元イメージ使用範囲の矩形のy座標
-                    , TILE_SIZE                                                     // 元イメージ使用範囲の矩形の幅
-                    , TILE_SIZE                                                     // 元イメージ使用範囲の矩形の高さ
-                    , dx * TILE_SIZE - drawCorrection.x                             // 描画イメージ矩形のx座標　タイル座標をドット座標に変換
-                    , dy * TILE_SIZE - drawCorrection.y                             // 描画イメージ矩形のy座標　タイル座標をドット座標に変換
-                    , TILE_SIZE                                                     // イメージを描画する幅
-                    , TILE_SIZE                                                     // イメージを描画する高さ
+                    this.img                                                            // 描画するイメージ
+                    , (index % MAP_CHIP_COLUMN) * TILE_SIZE                             // 元イメージ使用範囲の矩形のx座標
+                    , Math.floor(index / MAP_CHIP_ROW) * TILE_SIZE                      // 元イメージ使用範囲の矩形のy座標
+                    , TILE_SIZE                                                         // 元イメージ使用範囲の矩形の幅
+                    , TILE_SIZE                                                         // 元イメージ使用範囲の矩形の高さ
+                    , dx * TILE_SIZE - drawCorrection.x                                 // 描画イメージ矩形のx座標　タイル座標をドット座標に変換
+                    , dy * TILE_SIZE - drawCorrection.y                                 // 描画イメージ矩形のy座標　タイル座標をドット座標に変換
+                    , TILE_SIZE                                                         // イメージを描画する幅
+                    , TILE_SIZE                                                         // イメージを描画する高さ
                 );
             }
         }
     }
 
+    /**
+     * 全ての要素を一括描画
+     */
     _drawAll() {
-        this.mapDraw("main", this.renderingTarget);
-        this.objects.forEach((obj) => obj.draw(this.renderingTarget));
+        const player = this._getPlayerInfo();                                           // プレイヤーを中心にマップが動くので、プレイヤー情報を取得　そのうちカメラとかに移動座標を持たせて管理したい
+
+        this.mapDraw("main", this.renderingTarget, player);                             // マップ情報を描画
+        this.objects.forEach((obj) => obj.draw(this.renderingTarget, player));          // オブジェクト情報を描画
+        this.canvasContext.drawImage(                                                   // 仮想画面を実画面に描画
+            this.renderingTarget
+            , 0
+            , 0
+            , this.renderingTarget.width
+            , this.renderingTarget.height
+            , 0
+            , 0
+            , this.targetWidth
+            , this.targetHeight
+        );
     }
 
-    _getPlayerInfo() {
-        //const index = this.objects.indexOf("player");
+    _getPlayerInfo() {                  // プレイヤーを中心にマップが動くので、プレイヤー情報を取得　そのうちカメラとかに移動座標を持たせて管理したい
         const player = this.objects[0];
 
         return player;
@@ -362,59 +506,70 @@ class FieldMap extends Scene {
  */
 class GameObject extends EventDispatcher {
     /**
-     * @param {Array} tags タグ
+     * @param {Array} tags タグ　オブジェクトの種類を識別
      * @param {number} x ベクトルのx成分
      * @param {number} y ベクトルのy成分
      */
     constructor(tags = [], x, y) {
         super();
         this.img = new Image();
-        this.img.src = "img/player.png";                    // キャラチップファイル
-        this.con = screenCon;                               // 2D描画コンテキストを取得
+        this.img.src = "img/player.png";                    // オブジェクトチップファイル
         this.position = new Vector2(                        // 座標
             x * TILE_SIZE + TILE_SIZE / 2                       // 開始位置のタイル座標をドット座標に変換
             , y * TILE_SIZE + TILE_SIZE / 2                     // 開始位置のタイル座標をドット座標に変換
         );
-        this.destination = this.position.copy;              // 移動先のタイル座標をドット座標に変換
+        this.destination = this.position.copy;              // 移動先のドット座標　移動量0なので、現在値に設定
         this.move = new Vector2(0, 0);                      // 移動量
         this.drawCorrection = new Vector2(                  // 描画イメージ矩形の補正値　プレイヤーが画面中央に描画されるように補正する
             CHAR_WIDTH / 2                                      // キャラの幅の1/2
             , CHAR_HEIGHT - TILE_SIZE / 2                       // キャラの高さ - タイルサイズの1/2
         );
         this.speed = DEVELOP_MODE ? DEVELOP_SPEED : 1       // 移動スピード
-        this.tags = tags;
-        this.collisionArea = new Rectangle(
+        this.tags = tags;                                   // タグ
+        this.collisionArea = new Rectangle(                 // 当たり判定
             this.position.x
             , this.position.y
             , TILE_SIZE
             , TILE_SIZE
         );
-        this.destinationArea = new Rectangle(
+        this.destinationArea = new Rectangle(               // 移動先判定 
             this.destination.x
             , this.destination.y
             , TILE_SIZE
             , TILE_SIZE
         );
-        this.addEventListener("collision", (e) => {
+
+        this.addEventListener("collision", (e) => {         // 当たり判定イベントの追加 オブジェクトの向きと逆向きに移動スピードを加える
             if(this.angle === ANGLE_RIGHT) this.position.x -= this.speed;
             if(this.angle === ANGLE_DOWN) this.position.y -= this.speed;
             if(this.angle === ANGLE_LEFT) this.position.x += this.speed;
             if(this.angle === ANGLE_UP) this.position.y += this.speed;
 
-            this.move.reset;
-            this.collisionArea.set(this.position.x, this.position.y);
-            this.destination.set(this.position.x, this.position.y);
-            this.destinationArea.set(this.destination.x, this.destination.y);
+            this.position = mapLoop(this.position);                             // マップをループさせているので、座標調整　当たり判定まで終わった後に調整した方がよくね？
+            this.move.reset;                                                    // 移動量のリセット
+            this.collisionArea.set(this.position.x, this.position.y);           // 当たり判定の更新
+            this.destination.set(this.position.x, this.position.y);             // 移動先座標の更新　移動量0なので、現在値に設定
+            this.destinationArea.set(this.destination.x, this.destination.y);   // 移動先判定の更新
         });
     }
+
+    /**
+     * タグ検索
+     * @param {string} tagName
+     */
     hasTag(tagName) {
         return this.tags.includes(tagName);
     }
+
     /**
      * オブジェクトの描画を行う
+     * @param {Object} target
+     * @param {Player} player
      */
-    draw() {
-        this.con.drawImage(
+    draw(target, player) {
+        const context = target.getContext("2d");            // 仮想画面のコンテキスト取得
+
+        context.drawImage(
             this.img                                        // 描画するイメージ
             , this.act * CHAR_WIDTH                         // 元イメージ使用範囲の矩形のx座標
             , this.angle * CHAR_HEIGHT                      // 元イメージ使用範囲の矩形のy座標
@@ -432,12 +587,13 @@ class GameObject extends EventDispatcher {
     update() {
         this.act = frame >> 4 & 1;                          // 通常動作の定義
 
-        if (this.move.mag === 0) {                        // 歩行動作の定義
-            //this.move.x = -TILE_SIZE;
+        if (this.move.mag === 0) {                          // 歩行動作の定義
+            //this.move.x = -TILE_SIZE;                     乱数でNPCの動きを決めるとかやりたい
             //this.angle = ANGLE_LEFT;
             //this.destination = this.position.add(this.move);
         }
         this.destination = this.position.add(this.move);
+        this.destination = mapLoop(this.destination);
 
         if (this.move.mag != 0) {                           // 移動距離が0でない場合、座標の更新を行う
             this.position.x += sign(this.move.x) * this.speed;  // 座標の更新　x値
@@ -445,25 +601,9 @@ class GameObject extends EventDispatcher {
             this.move.x -= sign(this.move.x) * this.speed;      // 移動距離のx座標が0になるまで減算
             this.move.y -= sign(this.move.y) * this.speed;      // 移動距離のy座標が0になるまで減算
 
-            if (this.position.x < 0) {                          // マップのループに対応するためにx座標を更新
-                this.position.x += MAP_COLUMN * TILE_SIZE;
-            } else if (this.position.x >= MAP_COLUMN * TILE_SIZE) {
-                this.position.x %= MAP_COLUMN * TILE_SIZE;
-            }
-            if (this.position.y < 0) {                          // マップのループに対応するためにy座標を更新
-                this.position.y += MAP_ROW * TILE_SIZE;
-            } else if(this.position.y >= MAP_ROW * TILE_SIZE) {
-                this.position.y %= MAP_ROW * TILE_SIZE;
-            }
-            this.destinationArea.set(
-                this.destination.x
-                , this.destination.y
-                , TILE_SIZE
-                , TILE_SIZE
-            );
-        } else {
-            this.destination.reset;
+            this.position = mapLoop(this.position);
         }
+        this.destinationArea.set(this.destination.x, this.destination.y);
         this.collisionArea.set(this.position.x, this.position.y);
     }
 }
@@ -481,16 +621,13 @@ class Character extends GameObject {
         super(tags, x, y);
         this.img = new Image();
         this.img.src = "img/player.png";                    // キャラチップファイル
-        this.con = screenCon;                               // 2D描画コンテキストを取得
         this.angle = 0;                                     // 向き
         this.act = 0;                                       // 動き
-        this.move = new Vector2(0, 0);                      // 移動量
         this.drawCorrection = new Vector2(                  // 描画イメージ矩形の補正値　プレイヤーが画面中央に描画されるように補正する
             CHAR_WIDTH / 2                                      // キャラの幅の1/2
             , CHAR_HEIGHT - TILE_SIZE / 2                       // キャラの高さ - タイルサイズの1/2
         );
         this.speed = DEVELOP_MODE ? DEVELOP_SPEED : 1       // 移動スピード
-        this.tags = tags;
     }
     /**
      * キャラクターの動作の更新
@@ -498,12 +635,13 @@ class Character extends GameObject {
     update() {
         this.act = frame >> 4 & 1;                          // 通常動作の定義
 
-        if (this.move.mag === 0) {                        // 歩行動作の定義
+        if (this.move.mag === 0) {                          // 歩行動作の定義
             //this.move.x = -TILE_SIZE;
             //this.angle = ANGLE_LEFT;
             //this.destination = this.position.add(this.move);
         }
         this.destination = this.position.add(this.move);
+        this.destination = mapLoop(this.destination);
 
         if (this.move.mag != 0) {                           // 移動距離が0でない場合、座標の更新を行う
             this.position.x += sign(this.move.x) * this.speed;  // 座標の更新　x値
@@ -511,25 +649,9 @@ class Character extends GameObject {
             this.move.x -= sign(this.move.x) * this.speed;      // 移動距離のx座標が0になるまで減算
             this.move.y -= sign(this.move.y) * this.speed;      // 移動距離のy座標が0になるまで減算
 
-            if (this.position.x < 0) {                          // マップのループに対応するためにx座標を更新
-                this.position.x += MAP_COLUMN * TILE_SIZE;
-            } else if (this.position.x >= MAP_COLUMN * TILE_SIZE) {
-                this.position.x %= MAP_COLUMN * TILE_SIZE;
-            }
-            if (this.position.y < 0) {                          // マップのループに対応するためにy座標を更新
-                this.position.y += MAP_ROW * TILE_SIZE;
-            } else if(this.position.y >= MAP_ROW * TILE_SIZE) {
-                this.position.y %= MAP_ROW * TILE_SIZE;
-            }
-            this.destinationArea.set(
-                this.destination.x
-                , this.destination.y
-                , TILE_SIZE
-                , TILE_SIZE
-            );
-        } else {
-            this.destinationArea.reset;
+            this.position = mapLoop(this.position);
         }
+        this.destinationArea.set(this.destination.x, this.destination.y);
         this.collisionArea.set(this.position.x, this.position.y);
     }
 }
@@ -538,6 +660,11 @@ class Character extends GameObject {
  * プレイヤークラス
  */
 class Player extends Character {
+    /**
+     * @param {Array} tags タグ
+     * @param {number} x ベクトルのx成分
+     * @param {number} y ベクトルのy成分
+     */
     constructor(tags = ["character", "player"], x = START_X, y = START_Y) {
         super(tags, x, y);
         this.img = new Image();
@@ -547,8 +674,10 @@ class Player extends Character {
     /**
      * プレイヤーの描画を行う
      */
-    draw() {
-        this.con.drawImage(
+    draw(target, player) {
+        const context = target.getContext("2d");
+
+        context.drawImage(
             this.img                                        // 描画するイメージ
             , this.act * CHAR_WIDTH                         // 元イメージ使用範囲の矩形のx座標
             , this.angle * CHAR_HEIGHT                      // 元イメージ使用範囲の矩形のy座標
@@ -566,7 +695,7 @@ class Player extends Character {
     update() {
         this.act = frame >> 4 & 1;                          // 通常動作の定義
 
-        if (this.move.mag === 0) {                        // 歩行動作の定義
+        if (this.move.mag === 0) {                          // 歩行動作の定義
             if (keyBuffer["a"]) {                               // 左に動く
                 this.move.x = -TILE_SIZE;
                 this.angle = ANGLE_LEFT;
@@ -582,6 +711,7 @@ class Player extends Character {
             }
         }
         this.destination = this.position.add(this.move);
+        this.destination = mapLoop(this.destination);
 
         if (this.move.mag != 0) {                         // 移動距離が0でない場合、座標の更新を行う
             this.position.x += sign(this.move.x) * this.speed;  // 座標の更新　x値
@@ -589,25 +719,9 @@ class Player extends Character {
             this.move.x -= sign(this.move.x) * this.speed;      // 移動距離のx座標が0になるまで減算
             this.move.y -= sign(this.move.y) * this.speed;      // 移動距離のy座標が0になるまで減算
 
-            if (this.position.x < 0) {                          // マップのループに対応するためにx座標を更新
-                this.position.x += MAP_COLUMN * TILE_SIZE;
-            } else if (this.position.x >= MAP_COLUMN * TILE_SIZE) {
-                this.position.x %= MAP_COLUMN * TILE_SIZE;
-            }
-            if (this.position.y < 0) {                          // マップのループに対応するためにy座標を更新
-                this.position.y += MAP_ROW * TILE_SIZE;
-            } else if (this.position.y >= MAP_ROW * TILE_SIZE) {
-                this.position.y %= MAP_ROW * TILE_SIZE;
-            }
-            this.destinationArea.set(
-                this.destination.x
-                , this.destination.y
-                , TILE_SIZE
-                , TILE_SIZE
-            );
-        } else {
-            this.destinationArea.reset;
+            this.position = mapLoop(this.position);
         }
+        this.destinationArea.set(this.destination.x, this.destination.y);
         this.collisionArea.set(this.position.x, this.position.y);
     }
 }
@@ -738,27 +852,8 @@ class Vector2 {
  * 処理開始
  */
 window.onload = function() {
-    canvas = document.getElementById("main");       // mainキャンバスの要素を取得
-    canvasCon = canvas.getContext("2d");            // キャンバスの2D描画コンテキストを取得
-
-    screen = document.createElement("canvas");      // フィールドの作成
-    screen.width = SCREEN_WIDTH;                    // フィールドの定義 幅
-    screen.height = SCREEN_HEIGHT;                  // フィールドの定義 高さ
-    screenCon = screen.getContext("2d");            // フィールドの2D描画コンテキストを取得
-
-    map = new FieldMap(screen);                                // マップの定義
-    player = new Player();                // プレイヤーの定義
-    map.add(player);
-    character = new Character(["character"], 23, 20);
-    map.add(character);
-    canvasSize();
-    setInterval(
-        function(){
-            ProcessingPerFrame();
-            frame++;
-        }
-        , Math.floor(1 / FPS * 1000)
-    );
+    const game = new DragonQuestGame();
+    game.start();
 }
 /**
  * キーボード入力イベント
@@ -772,79 +867,6 @@ window.onkeydown = function(event) {
 window.onkeyup = function(event) {
     keyBuffer[event.key] = 0;
 };
-/**
- * ブラウザサイズ変更イベント
- */
-window.onresize = canvasSize;
-
-/**
- * キャンバスサイズの設定
- */
-function canvasSize() { 
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    if (canvas.width / SCREEN_WIDTH < canvas.height / SCREEN_HEIGHT){
-        fieldHeight = SCREEN_HEIGHT * canvas.width / SCREEN_WIDTH;
-        fieldWidth = canvas.width;
-    } else {
-        fieldHeight = canvas.height;
-        fieldWidth = SCREEN_WIDTH * canvas.height / SCREEN_HEIGHT;
-    }
-}
-
-/**
- * フレームごとの処理
- */
-function ProcessingPerFrame() {
-    map.update();
-    ScreenDepiction();
-}
-
-/**
- * 画面の描画
- */
-function ScreenDepiction() {
-    mainDepiction();
-    if (DEVELOP_MODE) {
-        canvasCon.imageSmoothingEnabled = 0;
-    }
-    canvasCon.drawImage(screen, 0, 0, screen.width, screen.height, 0, 0, fieldWidth, fieldHeight)
-}
-
-/**
- * メイン要素の描画
- */
-function mainDepiction(){
-    //map.draw("main", player.position);
-    if (DEVELOP_MODE) {
-        screenCon.fillStyle = "#ff0000";                                // 中線の描画　デバッグ用
-        screenCon.fillRect(0, SCREEN_HEIGHT / 2 - 1, SCREEN_WIDTH, 2);
-        screenCon.fillRect(SCREEN_WIDTH /2 - 1, 0, 2, SCREEN_HEIGHT);
-    }
-
-    if (opacity > 0) {                                                  // 操作キーウィンドウ
-        if (frame > 165) {
-            opacity -= 1 / 100;                                         // 時間経過でフェードアウト
-            screenCon.fillStyle = "rgba(0, 0, 0, " + opacity +")";
-            screenCon.fillRect(100, 3, 25, 42)
-            screenCon.font = FONT_SIZE + "px" + FONT;
-            screenCon.fillStyle =  "rgba(255, 255, 255, " + opacity +")";
-        } else {
-            screenCon.fillStyle = WINDOW_STYLE;
-            screenCon.fillRect(100, 3, 25, 42)
-            screenCon.font = FONT_SIZE + "px" + FONT;
-            screenCon.fillStyle =  FONT_STYLE;
-        }
-        screenCon.fillText("↑=W", 102, 12);
-        screenCon.fillText("←=a", 102, 22);
-        screenCon.fillText("→=d", 102, 32);
-        screenCon.fillText("↓=s", 102, 42);
-    }
-    //character.draw();
-    //player.draw();
-    eventWindow(player);
-}
 
 /**
  * マップタイルのインデックス取得
@@ -857,6 +879,25 @@ function getMapIndex(type, x, y) {
     let my = (Math.floor(y) + MAP_ROW) % MAP_ROW;
 
     return FIELD_MAP[type][mx + my * MAP_COLUMN];
+}
+
+/**
+ * マップループのための座標修正
+ * @param {Vector2} vector
+ */
+function mapLoop(vector) {
+    if (vector.x < 0) {                          // マップのループに対応するためにx座標を更新
+        vector.x += MAP_COLUMN * TILE_SIZE;
+    } else if (vector.x >= MAP_COLUMN * TILE_SIZE) {
+        vector.x %= MAP_COLUMN * TILE_SIZE;
+    }
+    if (vector.y < 0) {                          // マップのループに対応するためにy座標を更新
+        vector.y += MAP_ROW * TILE_SIZE;
+    } else if (vector.y >= MAP_ROW * TILE_SIZE) {
+        vector.y %= MAP_ROW * TILE_SIZE;
+    }
+
+    return vector;
 }
 
 /**
