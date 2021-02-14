@@ -1,6 +1,6 @@
 "use strict"
 
-const DEVELOP_MODE = true;
+const DEVELOP_MODE = false;
 const DEVELOP_SPEED = 4;
 const FPS = 33;                                 // フレームレート
 const FONT = "'ＭＳ ゴシック'";                  // 使用フォント
@@ -223,8 +223,6 @@ class Scene extends EventDispatcher {
         this.renderingTarget = renderingTarget;         // 仮想画面
 
         this.canvasResize();
-        this.targetWidth = this.canvas.width
-        this.targetHeight = this.canvas.height
         //this.accessDenyTiles = info.accessDenyTiles;
 
         this._destroyedObjects = [];
@@ -268,7 +266,7 @@ class Scene extends EventDispatcher {
      * シーンの更新
      * @param {GameInformation} gameInfo
      */
-    update(gameInfo) {//updateメソッドではシーンに登録されているActor全てを更新し、当たり判定を行い、描画します。描画の前に一度画面全体をクリアするのを忘れないで下さい。
+    update(gameInfo) {
         this._updateAll();
         this._collisionDetection();//当たり判定を処理する
         this._accessDenyDetection();//侵入不可判定を処理する
