@@ -195,6 +195,7 @@ class Game {
             return;
         }
 
+        frame++;
         this._prevTimestamp = timestamp;
         this.currentFps = 1 / elapsedSec;
 
@@ -233,9 +234,9 @@ class Scene extends EventDispatcher {
 
         this.canvasResize();
         addEventListener('resize', (e) => this.canvasResize());
-        //this.accessDenyTiles = info.accessDenyTiles;
 
         this._destroyedObjects = [];
+        this._accessDenyTiles = [];                     // 侵入不可タイル
     }
 
     /**
@@ -341,8 +342,7 @@ class Scene extends EventDispatcher {
                 , obj1.destination.x / TILE_SIZE                        // 使用するマップタイルの座標 x値　移動後のドット座標をタイル座標に変換
                 , obj1.destination.y / TILE_SIZE                        // 使用するマップタイルの座標 y値　移動後のドット座標をタイル座標に変換
             );
-            //if(this.accessDenyTiles.includes(index)) {            // configファイルで（以下略
-            if(accessDenyTiles.includes(index)) {                   // 移動先がマップの侵入不可タイルの場合
+            if(this._accessDenyTiles.includes(index)) {                   // 移動先がマップの侵入不可タイルの場合
                 obj1.dispatchEvent('collision', new GameEvent(obj1));
                 continue;
             }
@@ -354,8 +354,13 @@ class Scene extends EventDispatcher {
                 if (obj1.destination.sub(obj1.position).mag >= obj2.destination.sub(obj2.position).mag) { // obj1が既に移動を始めている時は判定を行わない
                     collision = obj1.destinationArea.collisionDetection(obj2.collisionArea);
                     if(collision) {                                 // 移動先がゲームオブジェクトの場合
-                        obj1.dispatchEvent('collision', new GameEvent(obj2));
-                        break;
+                        if(
+                            obj2.tags.includes("character")
+                            || obj2.tags.includes("door") && obj2.lockFlg
+                        ) {
+                            obj1.dispatchEvent('collision', new GameEvent(obj2));
+                            break;
+                        }
                     }
                 }
             }

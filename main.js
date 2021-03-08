@@ -2,7 +2,7 @@
 
 //import {Game} from './engin'
 
-const DEVELOP_MODE = false;
+const DEVELOP_MODE = true;
 const DEVELOP_SPEED = 4;
 const FPS = 33;                                 // フレームレート
 const FONT = "'ＭＳ ゴシック'";                  // 使用フォント
@@ -63,10 +63,6 @@ const FIELD_MAP = {                             // マップ マップチップ�
 };
 
 let frame = 0;                          // 内部カウンタ
-let keyBuffer = new Uint8Array(0x100);	// キーバッファ
-let accessDenyTiles = [                 // 侵入不可タイル
-    0, 1, 2, 4, 5, 8, 9, 10, 11
-];
 
 class DragonQuestGame extends Game {
     constructor() {
@@ -155,12 +151,19 @@ class FieldMap extends Scene {
             , Math.ceil(this.middlePointPos.y / TILE_SIZE)              // 画面の中心点のドット座標をタイル座標に変換　ドット単位で描画するので小数切り上げで余裕を持って描画する   
         );
         
-        this.player = new Player();                                // プレイヤーの定義
-        this.character = new Character(["character"], 23, 20);     // キャラクターの定義　一覧をconfigファイルとかで定義しておいて、一括で実施したい
+        this.player = new Player();                                 // プレイヤーの定義
+        this.character = new Character(["character", "draw"], 23, 20);      // キャラクターの定義　一覧をconfigファイルとかで定義しておいて、一括で実施したい
+        this.door1 = new Door(["door"], 18, 27);
+        this.building1 = new Building(["building"], 27, 5, ["key1"])
         this.addObject(this.player);
         this.addObject(this.character);
+        this.addObject(this.door1);
+        this.addObject(this.building1);
 
         this.camera = new Camera(this.player.position.x, this.player.position.y);
+        this._accessDenyTiles = [                                   // 侵入不可タイル
+            0, 1, 2, 4, 5, 8, 9, 10, 11, 12, 13, 15
+        ];
     }
     /**
      * シーンの更新
@@ -227,7 +230,7 @@ class FieldMap extends Scene {
      */
     _drawAll() {
         this.mapDraw("main", this.renderingTarget);                                 // マップ情報を描画
-        this.objects.forEach((obj) => obj.draw(this.renderingTarget, this.camera));     // オブジェクト情報を描画
+        this.objects.forEach((obj) => {if(obj.tags.includes("draw")) obj.draw(this.renderingTarget, this.camera)});     // オブジェクト情報を描画
         if(this.isGameEvent) {
             this.gameEvent.draw(this.renderingTarget);
         }
@@ -253,6 +256,88 @@ class FieldMap extends Scene {
         const index = this.objects.findIndex((element) => element instanceof Player);
 
         this.camera.update(this.objects[index].position);
+    }
+}
+
+/**
+ * 扉クラス
+ */
+class Door extends GameObject {
+    /**
+     * @param {Array} tags タグ
+     * @param {number} x ベクトルのx成分
+     * @param {number} y ベクトルのy成分
+     */
+    constructor(tags, x, y) {
+        super(tags, x, y);
+        this.index = getMapIndex(                                   // 描画するタイルのインデックスを取得
+            "main"                                                                  // 使用するマップの種類を指定
+            , x                                                                     // 使用するマップタイルの座標 x値
+            , y                                                                     // 使用するマップタイルの座標 y値
+        );
+        this.messages = [
+            ["カギが必要だ"]
+            , ["カギが開いた！"]
+        ];
+        this.lockFlg = true;
+        this.addEventListener("message", (e) => {
+            if(e.target.move.mag === 0 && this.lockFlg) {
+                let messageEvent;
+                if(! e.target.belongings.includes("key1")){
+                    messageEvent = new MessageEvent(3, 93, 122, 24, this.messages[0]);
+                } else {
+                    messageEvent = new MessageEvent(3, 93, 122, 24, this.messages[1]);
+                    this.lockFlg = false;
+                }
+                this.dispatchEvent("startGameEvent", new GameEvent(messageEvent));
+                messageEvent.addEventListener("stopGameEvent", (e) => {
+                    this.dispatchEvent("stopGameEvent", new GameEvent(e.target))
+                });
+            }
+        });
+    }
+    update(input) {
+    }
+}
+
+/**
+ * 建物クラス
+ */
+class Building extends GameObject {
+    /**
+     * @param {Array} tags タグ
+     * @param {number} x ベクトルのx成分
+     * @param {number} y ベクトルのy成分
+     */
+    constructor(tags, x, y, item) {
+        super(tags, x, y);
+        this.index = getMapIndex(                                   // 描画するタイルのインデックスを取得
+            "main"                                                                  // 使用するマップの種類を指定
+            , x                                                                     // 使用するマップタイルの座標 x値
+            , y                                                                     // 使用するマップタイルの座標 y値
+        );
+        this.messages = [
+            ["カギを入手した！"]
+            , ["もう何もないようだ"]
+        ];
+        this.item = item;
+        this.addEventListener("message", (e) => {
+            if(e.target.move.mag === 0) {
+                const messageEvent = new MessageEvent(3, 93, 122, 24, this.messages[0]);
+                if(this.item.length > 0) {
+                    e.target.belongings.push(this.item.shift());
+                }
+                if(this.messages.length > 1) {
+                    this.messages.shift();
+                }
+                this.dispatchEvent("startGameEvent", new GameEvent(messageEvent));
+                messageEvent.addEventListener("stopGameEvent", (e) => {
+                    this.dispatchEvent("stopGameEvent", new GameEvent(e.target))
+                });
+            }
+        });
+    }
+    update(input) {
     }
 }
 
@@ -337,7 +422,7 @@ class Player extends GameObject {
      * @param {number} x ベクトルのx成分
      * @param {number} y ベクトルのy成分
      */
-    constructor(tags = ["character", "player"], x = START_X, y = START_Y) {
+    constructor(tags = ["character", "player", "draw"], x = START_X, y = START_Y) {
         super(tags, x, y);
         this.img = new Image();
         this.img.src = "img/player.png";                // プレイヤーチップファイル
@@ -349,6 +434,7 @@ class Player extends GameObject {
         );
         this.speed = DEVELOP_MODE ? DEVELOP_SPEED : 1       // 移動スピード
         this.actionArea = new Rectangle(0, 0, 0, 0);
+        this.belongings = [];
         this.addEventListener("dispatchGameEvent", (e) => {
             this.actionArea.reset;
         });
@@ -433,18 +519,6 @@ window.onload = function() {
     const game = new DragonQuestGame();
     game.start();
 }
-/**
- * キーボード入力イベント
- */
-window.onkeydown = function(event) {
-    keyBuffer[event.key] = 1;
-};
-/**
- * キーボード入力終了イベント
- */
-window.onkeyup = function(event) {
-    keyBuffer[event.key] = 0;
-};
 
 /**
  * マップタイルのインデックス取得
