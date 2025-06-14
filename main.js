@@ -3,7 +3,7 @@
 //import {Game} from './engin'
 
 const DEVELOP_MODE = true;
-const DEVELOP_SPEED = 4;
+const DEVELOP_SPEED = 2;
 const FPS = 33;                                 // フレームレート
 const FONT = "'ＭＳ ゴシック'";                  // 使用フォント
 const FONT_SIZE = 10;                           // 使用フォントサイズ
@@ -385,6 +385,8 @@ class Character extends GameObject {
                 });
             }
         });
+        this.decisionInterval = 60; // 60フレームごとに判断（1秒間隔）
+        this.lastDecisionFrame = 0;
     }
     /**
      * キャラクターの動作の更新
@@ -392,10 +394,30 @@ class Character extends GameObject {
     update(input) {
         this.act = frame >> 4 & 1;                          // 通常動作の定義
 
-        if (this.move.mag === 0) {                          // 歩行動作の定義
-            // this.move.x = -TILE_SIZE;
-            // this.angle = ANGLE_LEFT;
-            // this.destination = this.position.add(this.move);
+        if (this.move.mag === 0 && frame - this.lastDecisionFrame >= this.decisionInterval) {
+            this.lastDecisionFrame = frame;
+
+            const dir = Math.floor(Math.random() * 4);
+            switch (dir) {
+                case 0:
+                    this.move.y = -TILE_SIZE;
+                    this.angle = ANGLE_UP;
+                    break;
+                case 1:
+                    this.move.y = TILE_SIZE;
+                    this.angle = ANGLE_DOWN;
+                    break;
+                case 2:
+                    this.move.x = -TILE_SIZE;
+                    this.angle = ANGLE_LEFT;
+                    break;
+                case 3:
+                    this.move.x = TILE_SIZE;
+                    this.angle = ANGLE_RIGHT;
+                    break;
+            }
+
+            this.destination = this.position.add(this.move);
         }
         this.destination = this.position.add(this.move);
         this.destination = mapLoop(this.destination);
@@ -436,7 +458,7 @@ class Player extends GameObject {
         this.actionArea = new Rectangle(0, 0, 0, 0);
         this.belongings = [];
         this.addEventListener("dispatchGameEvent", (e) => {
-            this.actionArea.reset;
+            this.actionArea.reset();
         });
     }
     /**
@@ -461,7 +483,7 @@ class Player extends GameObject {
      * キャラクターの動作の更新
      */
     update(input) {
-        this.actionArea.reset;
+        this.actionArea.reset();
         this.act = frame >> 4 & 1;                          // 通常動作の定義
 
         if (this.move.mag === 0) {                          // 歩行動作の定義
@@ -485,8 +507,8 @@ class Player extends GameObject {
         if (this.move.mag != 0) {                         // 移動距離が0でない場合、座標の更新を行う
             this.position.x += sign(this.move.x) * this.speed;  // 座標の更新　x値
             this.position.y += sign(this.move.y) * this.speed;  // 座標の更新　y値
-            this.move.x -= sign(this.move.x) * this.speed;      // 移動距離のx座標が0になるまで減算
-            this.move.y -= sign(this.move.y) * this.speed;      // 移動距離のy座標が0になるまで減算
+            this.move.x = dampToZero(this.move.x, this.speed);  // 移動距離のx座標が0になるまで減算
+            this.move.y = dampToZero(this.move.y, this.speed);  // 移動距離のy座標が0になるまで減算
 
             this.position = mapLoop(this.position);
         }
@@ -568,4 +590,8 @@ function sign(num) {
     }
 
     return result;
+}
+
+function dampToZero(value, amount) {
+    return Math.abs(value) <= amount ? 0 : value - sign(value) * amount;
 }

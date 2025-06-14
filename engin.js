@@ -351,16 +351,14 @@ class Scene extends EventDispatcher {
                 if (i === j) continue;
                 obj1 = this.objects[i];
                 obj2 = this.objects[j];
-                if (obj1.destination.sub(obj1.position).mag >= obj2.destination.sub(obj2.position).mag) { // obj1が既に移動を始めている時は判定を行わない
-                    collision = obj1.destinationArea.collisionDetection(obj2.collisionArea);
-                    if(collision) {                                 // 移動先がゲームオブジェクトの場合
-                        if(
-                            obj2.tags.includes("character")
-                            || obj2.tags.includes("door") && obj2.lockFlg
-                        ) {
-                            obj1.dispatchEvent('collision', new GameEvent(obj2));
-                            break;
-                        }
+                collision = obj1.destinationArea.collisionDetection(obj2.collisionArea);
+                if(collision) {                                 // 移動先がゲームオブジェクトの場合
+                    if(
+                        obj2.tags.includes("character")
+                        || obj2.tags.includes("door") && obj2.lockFlg
+                    ) {
+                        obj1.dispatchEvent('collision', new GameEvent(obj2));
+                        break;
                     }
                 }
             }
@@ -458,7 +456,7 @@ class GameObject extends EventDispatcher {
             x * TILE_SIZE + TILE_SIZE / 2                       // 開始位置のタイル座標をドット座標に変換
             , y * TILE_SIZE + TILE_SIZE / 2                     // 開始位置のタイル座標をドット座標に変換
         );
-        this.destination = this.position.copy;              // 移動先のドット座標　移動量0なので、現在値に設定
+        this.destination = this.position.copy();              // 移動先のドット座標　移動量0なので、現在値に設定
         this.move = new Vector2(0, 0);                      // 移動量
         this.drawCorrection = new Vector2(                  // 描画イメージ矩形の補正値　プレイヤーが画面中央に描画されるように補正する
             CHAR_WIDTH / 2                                      // キャラの幅の1/2
@@ -480,13 +478,11 @@ class GameObject extends EventDispatcher {
         );
 
         this.addEventListener("collision", (e) => {         // 当たり判定イベントの追加 オブジェクトの向きと逆向きに移動スピードを加える
-            if(this.angle === ANGLE_RIGHT) this.position.x -= this.speed;
-            if(this.angle === ANGLE_DOWN) this.position.y -= this.speed;
-            if(this.angle === ANGLE_LEFT) this.position.x += this.speed;
-            if(this.angle === ANGLE_UP) this.position.y += this.speed;
+            this.position.x -= sign(this.move.x) * this.speed;  // 座標の更新　x値
+            this.position.y -= sign(this.move.y) * this.speed;  // 座標の更新　y値
 
             this.position = mapLoop(this.position);                             // マップをループさせているので、座標調整　当たり判定まで終わった後に調整した方がよくね？
-            this.move.reset;                                                    // 移動量のリセット
+            this.move.reset();                                                    // 移動量のリセット
             this.collisionArea.set(this.position.x, this.position.y);           // 当たり判定の更新
             this.destination.set(this.position.x, this.position.y);             // 移動先座標の更新　移動量0なので、現在値に設定
             this.destinationArea.set(this.destination.x, this.destination.y);   // 移動先判定の更新
@@ -571,8 +567,8 @@ class Rectangle {
      * @param {number} width 矩形の幅
      * @param {number} height 矩形の高さ
      */
-    get reset() {
-        this.vector.reset;
+    reset() {
+        this.vector.reset();
         this.width = 0;
         this.height = 0;
     }
@@ -618,7 +614,7 @@ class Vector2 {
      * @param {number} x ベクトルのx成分
      * @param {number} y ベクトルのy成分
      */
-    get reset() {
+    reset() {
         this.x = 0;
         this.y = 0;
     }
@@ -674,7 +670,7 @@ class Vector2 {
     /**
      * このベクトルを複製して返す。
      */
-    get copy() {
+    copy() {
         return new Vector2(this.x, this.y);
     }
 }
